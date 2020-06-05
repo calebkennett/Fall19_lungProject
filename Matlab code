@@ -1,0 +1,127 @@
+% read the dcm image file
+img = dicomread(path);
+ 
+% this is how to show the dcm image
+imshow(img, [])
+ 
+ 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Threshold image - global threshold
+X =img;
+BW1 = imbinarize(X);
+ 
+% Invert mask
+BW = imcomplement(BW1);
+ 
+% Clear borders
+BW = imclearborder(BW);
+ 
+% Fill holes
+BW = imfill(BW, 'holes');
+ 
+% Close mask with disk
+radius = 8;
+decomposition = 0;
+se = strel('disk', radius, decomposition);
+BW = imclose(BW, se);
+ 
+% Open mask with disk
+radius = 9;
+decomposition = 0;
+se = strel('disk', radius, decomposition);
+BW = imopen(BW, se);
+ 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  mask grayscale image
+% Mask the image using bsxfun() function
+ 
+maskedGrayImage = bsxfun(@times, img, cast(BW, 'like', img));
+ 
+figure; imshow(maskedGrayImage, []); title('masked with grayscale')
+ 
+figure; imagesc(maskedGrayImage); title('grayscale to color');colorbar
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%
+% Threshold image - manual threshold
+T = maskedGrayImage > 537;
+%Remove objects containing fewer than 50 pixels using bwareaopen function.
+T2 = bwareaopen(T, 50); 
+ 
+figure; imshow(T2); title('Gray brigther than 537');
+ 
+if T2 == zeros(size(img))
+    disp('lung has no tumor')
+else
+    disp('lung has tumor(s)')
+end
+%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% glcms & haralick
+ 
+I = uint8(maskedGrayImage);  % very important makes glcms be correct
+%[a,h,v,d] = haart2(I);
+ 
+%figure; imagesc(a)
+  
+glcms = graycomatrix(I, 'offset', [0 1], 'Symmetric', true);
+ 
+stats = graycoprops(glcms);
+[x] = haralickTextureFeatures(glcms);
+ 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% theshold masked image
+ 
+tumor = T2; 
+%figure; imshow(tumor, []); title('Tumormask')
+ 
+ 
+TumorGrayImage = bsxfun(@times, maskedGrayImage, cast(tumor, 'like', maskedGrayImage));
+ 
+figure; imshow(TumorGrayImage, []); title('TumorGrayImage')
+ 
+ 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% area of tumor    more features which could be used as input to ann
+ 
+numWhite = sum(T2(:));
+Area = numWhite;
+%Convex Area: It gives the number of pixels in
+%convex image of the ROI.
+ 
+LungArea = sum(BW(:));
+ 
+%Perimeter: It is the distance between each
+%adjoining pairs of pixel around the border of the
+%ROI.
+Edges = edge(TumorGrayImage); %approx
+ 
+Perimeter =  sum(Edges(:));
+ 
+%Equivalent Diameter: It is the diameter of a circle
+%with the same area as the ROI. 
+ 
+E_dia = (Area*4/pi)^0.5;
+ 
+%Solidity: It is the proportion of the pixels in the
+%convex hull that are also in the ROI.
+Solidity = Area/LungArea;
+ 
+ 
+%Irregularity Index: is the measure of how closely
+%the shape of an object approaches that of a circle.
+ 
+I = (4*pi*Area/(Perimeter)^2)^0.5;
+ 
+%%% Eccentricity
+Ecc = (4*Area*pi)/(Perimeter.^2);
+%%%%
+data = [Area,LungArea,Perimeter,E_dia,Solidity,I]';
+Simple_data = [Area, Perimeter, Ecc]'
+figure; imshow(Edges)
+ 
+im00 = imfuse(img,Edges);
+im0 = imfuse(img,im00, 'montage');
+figure; imshow(im0); title('orig and tumor edges overlay')
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
